@@ -1,3 +1,5 @@
+import os
+import joblib
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import joblib
@@ -10,14 +12,18 @@ from urllib.parse import urlparse
 import urllib.parse
 import datetime
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 app = Flask(__name__)
 CORS(app)
 
 print("[+] Memanaskan Mesin Flask & Memuat Otak AI...")
 
 # Load Model
-model = joblib.load('hoax_model.pkl')
-vectorizer = joblib.load('tfidf_vectorizer.pkl')
+model_path = os.path.join(BASE_DIR, 'hoax_model.pkl')
+model = joblib.load(model_path)
+
+vectorizer_path = os.path.join(BASE_DIR, 'tfidf_vectorizer.pkl')
+vectorizer = joblib.load(vectorizer_path)
 
 try:
     nltk.data.find('corpora/stopwords')
@@ -251,4 +257,4 @@ def predict():
         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
-    app.run(debug=True, port=5000)
+    app.run(debug=True)

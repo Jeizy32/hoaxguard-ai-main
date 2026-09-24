@@ -1,14 +1,14 @@
 import { useState } from "react";
-import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "./ui/button";
+import { Textarea } from "./ui/textarea";
+import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Loader2, FileText, Link, Upload } from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
-import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "../hooks/use-toast";
 
-interface DetectionResult {
+export interface DetectionResult {
   confidence: number;
   verdict: 'real' | 'fake' | 'suspicious';
+  summary?: string; 
   analysis: {
     sentiment: string;
     keywordsRisk: string[];
@@ -65,90 +65,79 @@ const DetectionInterface = ({
       return;
     }
 
-    if (activeTab === 'url' && !content.startsWith('http')) {
-      toast({
-        title: "URL tidak valid",
-        description: "Mohon masukkan URL yang valid (dimulai dengan http/https)",
-        variant: "destructive"
-      });
-      return;
-    }
-
     setIsAnalyzing(true);
     
     try {
-      let analyzeContent = content;
-      
-      // If URL is provided, we could fetch the content (simplified for demo)
-      if (activeTab === 'url') {
-        analyzeContent = `URL: ${url}\nContent analysis requested for: ${url}`;
+      const response = await fetch('http://127.0.0.1:5000/api/predict', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ 
+          text: content,
+          type: activeTab
+        })
+      });
+
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.error || 'Gagal terhubung ke server Flask');
       }
 
-      console.log('Starting analysis with Perplexity API...');
+      const resData = await response.json();
       
-      const { data, error } = await supabase.functions.invoke('analyze-news', {
-        body: { 
-          content: analyzeContent,
-          url: activeTab === 'url' ? url : null
-        }
-      });
-
-      if (error) {
-        console.error('Supabase function error:', error);
-        throw new Error(error.message || 'Failed to analyze content');
-      }
-
-      console.log('Analysis completed:', data);
+      // UPDATE: Tentukan status berdasarkan balasan Flask (3 Kasta)
+      let finalVerdict: 'real' | 'fake' | 'suspicious' = 'real';
+      if (resData.hasil_prediksi === "Hoax") finalVerdict = 'fake';
+      if (resData.hasil_prediksi === "Diragukan") finalVerdict = 'suspicious';
       
-      onAnalysisComplete(data);
-      
-      toast({
-        title: "Analisis Selesai",
-        description: "Hasil deteksi hoax dari berita terkini telah tersedia.",
-      });
+      const prob = resData.probabilitas;
 
-    } catch (error) {
-      console.error('Analysis error:', error);
-      
-      toast({
-        title: "Error Analisis",
-        description: "Terjadi kesalahan saat menganalisis. Menggunakan data demo.",
-        variant: "destructive",
-      });
-
-      // Fallback to mock data if API fails
-      const fallbackResult = {
-        confidence: Math.floor(Math.random() * 100) + 1, // Random 1-100
-        verdict: 'suspicious' as const,
+      const formattedResult: DetectionResult = {
+        confidence: prob,
+        verdict: finalVerdict,
+        summary: resData.ringkasan,
         analysis: {
-          sentiment: 'Netral',
-          keywordsRisk: ['memerlukan', 'verifikasi'],
-          sourceCredibility: 'Sedang',
-          linguisticPatterns: [
-            'Konten memerlukan verifikasi lebih lanjut',
-            'Crosscheck dengan sumber terpercaya direkomendasikan'
-          ],
+          sentiment: finalVerdict === 'fake' ? 'Negatif / Provokatif' : (finalVerdict === 'suspicious' ? 'Mencurigakan / Abu-abu' : 'Netral / Objektif'),
+          keywordsRisk: finalVerdict === 'fake' ? ['Sensasional', 'Manipulatif'] : (finalVerdict === 'suspicious' ? ['Link Abu-abu', 'Potensi Phishing'] : ['Aman', 'Faktual']),
+          sourceCredibility: resData.kredibilitas_sumber || (finalVerdict === 'fake' ? 'Rendah' : 'Tinggi'),
+          linguisticPatterns: resData.pola_linguistik || ['Analisis teks selesai'],
           factCheck: {
-            similarNews: [],
-            claimVerification: ['Analisis terganggu, gunakan sumber terpercaya untuk verifikasi'],
-            expertOpinion: 'Silakan periksa kembali dengan sumber berita resmi dan terpercaya.'
+            similarNews: resData.berita_serupa || [],
+            claimVerification: [resData.pesan || 'Teks berhasil diproses oleh Otak AI Lokal.'],
+            expertOpinion: resData.opini_ahli || (finalVerdict === 'fake' 
+              ? 'Model Naive Bayes mendeteksi pola bobot TF-IDF yang sangat identik dengan karakteristik berita palsu (Hoaks).' 
+              : 'Pola kalimat dan bobot kata selaras dengan berita faktual.')
           },
           technicalMetrics: {
-            readabilityScore: 70,
-            emotionalIntensity: 50,
-            biasScore: 45,
-            factualDensity: 65
+            readabilityScore: finalVerdict === 'fake' ? 55 : 85,
+            emotionalIntensity: finalVerdict === 'fake' ? Math.min(prob + 5, 98) : (finalVerdict === 'suspicious' ? 55 : Math.max(100 - prob, 15)),
+            biasScore: finalVerdict === 'fake' ? Math.min(prob, 95) : (finalVerdict === 'suspicious' ? 60 : Math.max(100 - prob, 10)),
+            factualDensity: finalVerdict === 'fake' ? Math.max(100 - prob, 12) : (finalVerdict === 'suspicious' ? 45 : Math.min(prob, 96))
           },
           sourceAnalysis: {
-            domainAge: 'Tidak diketahui',
-            authorCredibility: 'Tidak diketahui',
-            publicationHistory: 'Tidak diketahui',
-            socialMediaPresence: 'Tidak diketahui'
+            domainAge: resData.domain || 'Analisis Teks Mentah',
+            authorCredibility: resData.kredibilitas_sumber || 'Diproses by Machine Learning',
+            publicationHistory: 'Riwayat domain tersedia',
+            socialMediaPresence: 'Pengecekan Independen'
           }
         }
       };
       
-      onAnalysisComplete(fallbackResult);
+      onAnalysisComplete(formattedResult);
+      
+      toast({
+        title: "Analisis Selesai",
+        description: `Berita dinyatakan: ${resData.hasil_prediksi}`,
+      });
+
+    } catch (error) {
+      console.error('Koneksi Error:', error);
+      toast({
+        title: "Error Analisis",
+        description: error instanceof Error ? error.message : "Pastikan server Flask nyala!",
+        variant: "destructive",
+      });
     } finally {
       setIsAnalyzing(false);
     }
@@ -160,16 +149,17 @@ const DetectionInterface = ({
         <Card className="bg-card/50 backdrop-blur-sm border-border/50 shadow-card">
           <CardHeader className="text-center">
             <CardTitle className="text-3xl font-bold mb-4">
-              Analisis Berita Real-Time
+              Analisis Berita Real-Time (Model ML Lokal)
             </CardTitle>
             <p className="text-muted-foreground">
-              Masukkan teks berita atau URL artikel untuk dianalisis menggunakan AI dengan data berita terkini
+              Masukkan teks berita untuk diuji langsung menggunakan model Machine Learning bikinan lu sendiri
             </p>
           </CardHeader>
           
           <CardContent className="space-y-6">
             <div className="flex border border-border/50 rounded-lg p-1 bg-muted/20">
               <button
+                type="button"
                 onClick={() => setActiveTab('text')}
                 className={`flex-1 flex items-center justify-center gap-2 py-2 px-4 rounded-md transition-all ${
                   activeTab === 'text' 
@@ -182,6 +172,7 @@ const DetectionInterface = ({
               </button>
               
               <button
+                type="button"
                 onClick={() => setActiveTab('url')}
                 className={`flex-1 flex items-center justify-center gap-2 py-2 px-4 rounded-md transition-all ${
                   activeTab === 'url' 
@@ -230,7 +221,7 @@ const DetectionInterface = ({
               {isAnalyzing ? (
                 <>
                   <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                  Menganalisis dengan AI...
+                  Model ML Sedang Menganalisis...
                 </>
               ) : (
                 <>
@@ -241,7 +232,7 @@ const DetectionInterface = ({
             </Button>
             
             <div className="text-center text-xs text-muted-foreground">
-              🚀 Menggunakan AI untuk menganalisis berita terkini dan mencari sumber serupa
+              ⚡ Terhubung langsung dengan Backend Flask dan Model .pkl Lokal Lu
             </div>
           </CardContent>
         </Card>

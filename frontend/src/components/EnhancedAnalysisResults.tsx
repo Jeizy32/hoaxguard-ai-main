@@ -1,11 +1,11 @@
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Progress } from "@/components/ui/progress";
-import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { Button } from "@/components/ui/button";
-import { toast } from "@/hooks/use-toast";
+import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
+import { Progress } from "./ui/progress";
+import { Badge } from "./ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "./ui/dialog";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "./ui/collapsible";
+import { Button } from "./ui/button";
+import { toast } from "../hooks/use-toast";
 import { useState } from "react";
 import { 
   CheckCircle, 
@@ -24,7 +24,6 @@ import {
   Users,
   Search,
   ChevronDown,
-  ChevronRight,
   Copy,
   Info,
   Maximize2
@@ -33,6 +32,7 @@ import {
 interface DetectionResult {
   confidence: number;
   verdict: 'real' | 'fake' | 'suspicious';
+  summary?: string; 
   analysis: {
     sentiment: string;
     keywordsRisk: string[];
@@ -67,15 +67,6 @@ interface DetectionResult {
 }
 
 const EnhancedAnalysisResults = ({ result }: { result: DetectionResult }) => {
-  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({});
-  const [selectedNews, setSelectedNews] = useState<any>(null);
-
-  const toggleSection = (section: string) => {
-    setExpandedSections(prev => ({
-      ...prev,
-      [section]: !prev[section]
-    }));
-  };
 
   const copyToClipboard = (text: string, type: string) => {
     navigator.clipboard.writeText(text);
@@ -84,21 +75,42 @@ const EnhancedAnalysisResults = ({ result }: { result: DetectionResult }) => {
       description: `${type} berhasil disalin ke clipboard`,
     });
   };
+  
   const getVerdictConfig = () => {
     switch (result.verdict) {
-      case 'real':
+      case 'real': {
+        // Cek apakah ini artikel klarifikasi berdasarkan opini ahli dari Flask
+        const isClarification = result.analysis.factCheck.expertOpinion.toLowerCase().includes('klarifikasi');
+
+        if (isClarification) {
+          return {
+            icon: Shield,
+            title: 'Artikel Klarifikasi (Anti-Hoaks)',
+            description: (
+              <span className="text-base">
+                <span className="text-success font-bold">SUMBER BERITA ASLI</span>, namun sedang membahas/membongkar <span className="text-destructive font-bold underline">NARASI HOAKS</span>.
+              </span>
+            ),
+            color: 'success',
+            bgGradient: 'bg-gradient-success'
+          };
+        }
+
+        // Jika berita faktual biasa
         return {
           icon: CheckCircle,
-          title: 'Berita Terpercaya',
-          description: 'Analisis menunjukkan berita ini kemungkinan besar akurat',
+          title: 'Berita Faktual / Terpercaya',
+          description: 'Analisis menunjukkan bahwa informasi dalam artikel ini kredibel dan berasal dari sumber yang sah.',
           color: 'success',
           bgGradient: 'bg-gradient-success'
         };
+      }
+
       case 'fake':
         return {
           icon: XCircle,
           title: 'Berita Hoax',
-          description: 'Analisis menunjukkan berita ini kemungkinan besar palsu',
+          description: 'Analisis menunjukkan berita ini kemungkinan besar palsu / manipulatif.',
           color: 'destructive',
           bgGradient: 'bg-gradient-danger'
         };
@@ -115,7 +127,7 @@ const EnhancedAnalysisResults = ({ result }: { result: DetectionResult }) => {
 
   const config = getVerdictConfig();
   const Icon = config.icon;
-  const confidencePercentage = Math.round(result.confidence * 100);
+  const confidencePercentage = Math.round(result.confidence);
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('id-ID', {
@@ -163,9 +175,9 @@ const EnhancedAnalysisResults = ({ result }: { result: DetectionResult }) => {
             }`}>
               {config.title}
             </CardTitle>
-            <p className="text-muted-foreground text-lg">
+            <div className="text-muted-foreground text-lg">
               {config.description}
-            </p>
+            </div>
           </CardHeader>
           
           <CardContent className="space-y-6">
@@ -176,7 +188,7 @@ const EnhancedAnalysisResults = ({ result }: { result: DetectionResult }) => {
                 result.verdict === 'suspicious' ? 'bg-warning/20 text-warning border-warning/30' :
                 'bg-muted/20 text-muted-foreground border-muted/30'
               }`}>
-                {result.verdict.toUpperCase()}
+                {result.verdict === 'real' ? 'FAKTUAL' : result.verdict === 'fake' ? 'HOAKS' : 'DIRAGUKAN'}
               </Badge>
               <div className={`text-5xl font-bold mb-2 ${
                 result.verdict === 'fake' ? 'text-destructive' :
@@ -191,7 +203,11 @@ const EnhancedAnalysisResults = ({ result }: { result: DetectionResult }) => {
               </p>
               <Progress 
                 value={confidencePercentage} 
-                className="h-4 mb-2"
+                className={`h-4 mb-2 ${
+                  result.verdict === 'fake' ? '[&>div]:bg-destructive' :
+                  result.verdict === 'real' ? '[&>div]:bg-success' :
+                  '[&>div]:bg-warning'
+                }`}
               />
               <div className="flex justify-between text-xs text-muted-foreground">
                 <span>Tidak Yakin</span>
@@ -212,6 +228,30 @@ const EnhancedAnalysisResults = ({ result }: { result: DetectionResult }) => {
 
           {/* Overview Tab */}
           <TabsContent value="overview" className="space-y-6 mt-6">
+            
+            {/* Card Ringkasan Isi Berita */}
+            {result.summary && (
+              <Card className="bg-card/50 backdrop-blur-sm border-border/50 shadow-card">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-lg">
+                    <FileText className="h-5 w-5 text-primary" />
+                    Intisari Teks Berita
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div 
+                    className="p-4 bg-muted/20 rounded-lg border-l-4 border-primary cursor-pointer hover:bg-muted/30 transition-colors group relative"
+                    onClick={() => copyToClipboard(result.summary || "", "Ringkasan berita")}
+                  >
+                    <p className="text-sm italic leading-relaxed text-foreground/90">
+                      "{result.summary}"
+                    </p>
+                    <Copy className="h-4 w-4 text-muted-foreground absolute right-4 top-4 opacity-0 group-hover:opacity-100 transition-opacity" />
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <Card className="bg-card/50 backdrop-blur-sm border-border/50 shadow-card">
                 <CardHeader>
@@ -333,114 +373,120 @@ const EnhancedAnalysisResults = ({ result }: { result: DetectionResult }) => {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                {result.analysis.factCheck.similarNews.map((news, index) => (
-                  <Dialog key={index}>
-                    <DialogTrigger asChild>
-                      <div className="border border-border/50 rounded-lg p-4 space-y-2 cursor-pointer hover:bg-muted/20 transition-colors group">
-                        <div className="flex items-start justify-between gap-4">
-                          <div className="flex-1">
-                            <h4 className="font-medium text-sm mb-2 group-hover:text-primary transition-colors">{news.title}</h4>
-                            <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                              <div className="flex items-center gap-1">
-                                <Globe className="h-3 w-3" />
-                                {news.source}
-                              </div>
-                              <div className="flex items-center gap-1">
-                                <Calendar className="h-3 w-3" />
-                                {formatDate(news.date)}
+                {result.analysis.factCheck.similarNews && result.analysis.factCheck.similarNews.length > 0 ? (
+                  result.analysis.factCheck.similarNews.map((news, index) => (
+                    <Dialog key={index}>
+                      <DialogTrigger asChild>
+                        <div className="border border-border/50 rounded-lg p-4 space-y-2 cursor-pointer hover:bg-muted/20 transition-colors group">
+                          <div className="flex items-start justify-between gap-4">
+                            <div className="flex-1">
+                              <h4 className="font-medium text-sm mb-2 group-hover:text-primary transition-colors">{news.title}</h4>
+                              <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                                <div className="flex items-center gap-1">
+                                  <Globe className="h-3 w-3" />
+                                  {news.source}
+                                </div>
+                                <div className="flex items-center gap-1">
+                                  <Calendar className="h-3 w-3" />
+                                  {formatDate(news.date)}
+                                </div>
                               </div>
                             </div>
+                            <div className="flex flex-col items-end gap-2">
+                              <Badge variant={getCredibilityColor(news.credibility)}>
+                                {news.credibility}
+                              </Badge>
+                              <div className="text-xs text-muted-foreground">
+                                {Math.round(news.similarity * 100)}% mirip
+                              </div>
+                              <Maximize2 className="h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                            </div>
                           </div>
-                          <div className="flex flex-col items-end gap-2">
+                          <div className="flex items-center gap-2 mt-2">
+                            <Progress value={news.similarity * 100} className="flex-1 h-2" />
+                            {news.url && news.url !== '#' && (
+                              <a 
+                                href={news.url} 
+                                target="_blank" 
+                                rel="noopener noreferrer"
+                                onClick={(e) => e.stopPropagation()}
+                                className="flex items-center gap-1 text-xs text-primary hover:text-primary/80 transition-colors"
+                              >
+                                <ExternalLink className="h-3 w-3" />
+                                Buka Sumber
+                              </a>
+                            )}
+                          </div>
+                        </div>
+                      </DialogTrigger>
+                      <DialogContent className="max-w-2xl">
+                        <DialogHeader>
+                          <DialogTitle className="text-left">{news.title}</DialogTitle>
+                        </DialogHeader>
+                        <div className="space-y-4">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <Globe className="h-4 w-4" />
+                              <span className="font-medium">{news.source}</span>
+                            </div>
                             <Badge variant={getCredibilityColor(news.credibility)}>
-                              {news.credibility}
+                              Kredibilitas: {news.credibility}
                             </Badge>
-                            <div className="text-xs text-muted-foreground">
-                              {Math.round(news.similarity * 100)}% mirip
+                          </div>
+                          
+                          <div className="grid grid-cols-2 gap-4 p-4 bg-muted/20 rounded-lg">
+                            <div>
+                              <span className="text-sm text-muted-foreground">Tanggal Publikasi:</span>
+                              <div className="font-medium">{formatDate(news.date)}</div>
                             </div>
-                            <Maximize2 className="h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                            <div>
+                              <span className="text-sm text-muted-foreground">Tingkat Kemiripan:</span>
+                              <div className="font-medium">{Math.round(news.similarity * 100)}%</div>
+                            </div>
                           </div>
-                        </div>
-                         <div className="flex items-center gap-2 mt-2">
-                           <Progress value={news.similarity * 100} className="flex-1 h-2" />
-                           {news.url && news.url !== '#' && (
-                             <a 
-                               href={news.url} 
-                               target="_blank" 
-                               rel="noopener noreferrer"
-                               onClick={(e) => e.stopPropagation()}
-                               className="flex items-center gap-1 text-xs text-primary hover:text-primary/80 transition-colors"
-                             >
-                               <ExternalLink className="h-3 w-3" />
-                               Buka Sumber
-                             </a>
-                           )}
-                         </div>
-                      </div>
-                    </DialogTrigger>
-                    <DialogContent className="max-w-2xl">
-                      <DialogHeader>
-                        <DialogTitle className="text-left">{news.title}</DialogTitle>
-                      </DialogHeader>
-                      <div className="space-y-4">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <Globe className="h-4 w-4" />
-                            <span className="font-medium">{news.source}</span>
-                          </div>
-                          <Badge variant={getCredibilityColor(news.credibility)}>
-                            Kredibilitas: {news.credibility}
-                          </Badge>
-                        </div>
-                        
-                        <div className="grid grid-cols-2 gap-4 p-4 bg-muted/20 rounded-lg">
-                          <div>
-                            <span className="text-sm text-muted-foreground">Tanggal Publikasi:</span>
-                            <div className="font-medium">{formatDate(news.date)}</div>
-                          </div>
-                          <div>
-                            <span className="text-sm text-muted-foreground">Tingkat Kemiripan:</span>
-                            <div className="font-medium">{Math.round(news.similarity * 100)}%</div>
-                          </div>
-                        </div>
 
-                        <div className="space-y-2">
-                          <span className="text-sm text-muted-foreground">Progress Kemiripan:</span>
-                          <Progress value={news.similarity * 100} className="h-3" />
-                        </div>
+                          <div className="space-y-2">
+                            <span className="text-sm text-muted-foreground">Progress Kemiripan:</span>
+                            <Progress value={news.similarity * 100} className="h-3" />
+                          </div>
 
-                        <div className="flex gap-2">
-                          <Button 
-                            variant="outline" 
-                            onClick={() => copyToClipboard(news.title, "Judul berita")}
-                            className="flex-1"
-                          >
-                            <Copy className="h-4 w-4 mr-2" />
-                            Salin Judul
-                          </Button>
-                          <Button 
-                            variant="outline" 
-                            className="flex-1"
-                            onClick={() => {
-                              if (news.url && news.url !== '#') {
-                                window.open(news.url, '_blank', 'noopener,noreferrer');
-                              } else {
-                                toast({
-                                  title: "Link Tidak Tersedia",
-                                  description: "URL sumber tidak tersedia untuk berita ini.",
-                                  variant: "destructive",
-                                });
-                              }
-                            }}
-                          >
-                            <ExternalLink className="h-4 w-4 mr-2" />
-                            Buka Sumber
-                          </Button>
+                          <div className="flex gap-2">
+                            <Button 
+                              variant="outline" 
+                              onClick={() => copyToClipboard(news.title, "Judul berita")}
+                              className="flex-1"
+                            >
+                              <Copy className="h-4 w-4 mr-2" />
+                              Salin Judul
+                            </Button>
+                            <Button 
+                              variant="outline" 
+                              className="flex-1"
+                              onClick={() => {
+                                if (news.url && news.url !== '#') {
+                                  window.open(news.url, '_blank', 'noopener,noreferrer');
+                                } else {
+                                  toast({
+                                    title: "Link Tidak Tersedia",
+                                    description: "URL sumber tidak tersedia untuk berita ini.",
+                                    variant: "destructive",
+                                  });
+                                }
+                              }}
+                            >
+                              <ExternalLink className="h-4 w-4 mr-2" />
+                              Buka Sumber
+                            </Button>
+                          </div>
                         </div>
-                      </div>
-                    </DialogContent>
-                  </Dialog>
-                ))}
+                      </DialogContent>
+                    </Dialog>
+                  ))
+                ) : (
+                  <div className="text-center p-6 text-muted-foreground bg-muted/10 rounded-lg border border-dashed border-border/50">
+                    Belum ada referensi berita serupa dari fact-checker untuk topik ini.
+                  </div>
+                )}
               </CardContent>
             </Card>
 
@@ -474,7 +520,7 @@ const EnhancedAnalysisResults = ({ result }: { result: DetectionResult }) => {
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2 text-lg">
                     <Users className="h-5 w-5 text-primary" />
-                    Opini Ahli
+                    Opini Ahli (Model AI)
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
@@ -487,10 +533,10 @@ const EnhancedAnalysisResults = ({ result }: { result: DetectionResult }) => {
                       <div className="flex items-center gap-2">
                         <div className="flex">
                           {[1, 2, 3, 4, 5].map((star) => (
-                            <Star key={star} className="h-3 w-3 fill-yellow-400 text-yellow-400" />
+                            <Star key={star} className="h-3 w-3 fill-primary text-primary" />
                           ))}
                         </div>
-                        <span className="text-xs text-muted-foreground">Konsensus Ahli</span>
+                        <span className="text-xs text-muted-foreground">Sistem Deteksi HoaxGuard</span>
                       </div>
                       <Copy className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
                     </div>
@@ -632,8 +678,8 @@ const EnhancedAnalysisResults = ({ result }: { result: DetectionResult }) => {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   {Object.entries(result.analysis.sourceAnalysis).map(([key, value]) => {
                     const sourceConfig = {
-                      domainAge: { label: 'Usia Domain', icon: Calendar },
-                      authorCredibility: { label: 'Kredibilitas Penulis', icon: Users },
+                      domainAge: { label: 'Asal Domain', icon: Calendar },
+                      authorCredibility: { label: 'Kredibilitas Sumber', icon: Users },
                       publicationHistory: { label: 'Riwayat Publikasi', icon: FileText },
                       socialMediaPresence: { label: 'Kehadiran Media Sosial', icon: Activity }
                     };
@@ -702,10 +748,10 @@ const EnhancedAnalysisResults = ({ result }: { result: DetectionResult }) => {
                       <div className="flex items-start gap-3">
                         <CheckCircle className="h-5 w-5 text-accent mt-0.5" />
                         <div>
-                          <h4 className="font-medium text-accent mb-1">✅ Terpercaya</h4>
+                          <h4 className="font-medium text-accent mb-1">✅ Terpercaya (Atau Artikel Klarifikasi)</h4>
                           <p className="text-sm">
-                            Berita ini menunjukkan karakteristik informasi yang kredibel dan dapat diandalkan.
-                            Namun, tetap bijak dalam membagikan informasi dan cross-check dengan sumber lain.
+                            Berita ini menunjukkan karakteristik informasi yang kredibel, atau merupakan artikel pengecekan fakta (Fact-Check) yang membongkar hoaks.
+                            Tetap bijak dalam membagikan informasi.
                           </p>
                         </div>
                       </div>
@@ -716,7 +762,7 @@ const EnhancedAnalysisResults = ({ result }: { result: DetectionResult }) => {
                     <h5 className="text-sm font-medium mb-2">💡 Tips Verifikasi Tambahan:</h5>
                     <ul className="text-xs text-muted-foreground space-y-1">
                       <li>• Cek tanggal publikasi dan relevansi waktu</li>
-                      <li>• Verifikasi melalui fact-checker seperti Tempo.co, Kompas.com</li>
+                      <li>• Verifikasi melalui fact-checker seperti Tempo.co, Kompas.com, TurnBackHoax.id</li>
                       <li>• Bandingkan dengan berita dari media mainstream lainnya</li>
                       <li>• Perhatikan kualitas foto/video yang menyertai berita</li>
                     </ul>

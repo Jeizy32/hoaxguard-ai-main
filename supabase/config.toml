@@ -1,7 +1,0 @@
-project_id = "xfdnwzqezzgzojsvzhly"
-
-[functions.search-similar-news]
-verify_jwt = false
-
-[functions.analyze-news]  
-verify_jwt = false

@@ -77,7 +77,7 @@ const AnalysisResults = ({ result }: { result: DetectionResult }) => {
 
   const config = getVerdictConfig();
   const Icon = config.icon;
-  const confidencePercentage = Math.round(result.confidence * 100);
+  const confidencePercentage = Math.round(result.confidence);
 
   return (
     <section className="py-8 px-4">
